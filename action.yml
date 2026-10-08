@@ -26,4 +26,4 @@ outputs:
 
 runs:
   using: docker
-  image: Dockerfile
+  image: docker://ghcr.io/qtsolv/previewer:v1
