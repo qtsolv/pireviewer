@@ -24,6 +24,10 @@ export class PiReviewAgent implements ReviewAgent {
   ): Promise<AgentReviewResult> {
     core.info("[Pi] Initializing coding agent session in-process...");
 
+    if (!process.env.GEMINI_API_KEY && process.env.GOOGLE_API_KEY) {
+      process.env.GEMINI_API_KEY = process.env.GOOGLE_API_KEY;
+    }
+
     const inlineComments: InlineComment[] = [];
     const resolvedThreads: ResolvedThreadAction[] = [];
     const customTools = createPiReviewTools(inlineComments, resolvedThreads);
