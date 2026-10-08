@@ -54,9 +54,10 @@ jobs:
         id: previewer
         uses: ./
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          model: openrouter/z-ai/glm-5.3-flash
 
       - name: Verify Review Output
         if: always() && steps.previewer.outputs.review != ''
