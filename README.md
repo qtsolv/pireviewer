@@ -38,7 +38,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run PReviewer Action
-        uses: ./ # or owner/previewer@v1
+        uses: qtsolv/previewer@v1
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         with:
