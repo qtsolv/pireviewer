@@ -34,10 +34,11 @@ export class PiReviewAgent implements ReviewAgent {
         const modelRuntime = await ModelRuntime.create();
         const parts = options.model.split("/");
         const provider = parts[0];
-        const modelId = parts[1];
+        const modelId = parts.slice(1).join("/");
         if (provider && modelId) {
           modelObj = modelRuntime.getModel(provider, modelId);
-        } else {
+        }
+        if (!modelObj) {
           modelObj = modelRuntime
             .getAllModels()
             .find(
