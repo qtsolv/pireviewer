@@ -234,7 +234,8 @@ export async function postPullRequestReview(
       per_page: 100,
     });
     const foundReview = reviews.find(
-      (r) => isOwnerMatch(r.user?.login) && r.body && r.body.includes(COMMENT_TAG),
+      (r) =>
+        isOwnerMatch(r.user?.login) && r.body && r.body.includes(COMMENT_TAG),
     );
     if (foundReview) {
       existingReviewId = foundReview.id;
@@ -252,9 +253,7 @@ export async function postPullRequestReview(
     });
     const foundComment = comments.find(
       (c) =>
-        isOwnerMatch(c.user?.login) &&
-        c.body &&
-        c.body.includes(COMMENT_TAG),
+        isOwnerMatch(c.user?.login) && c.body && c.body.includes(COMMENT_TAG),
     );
     if (foundComment) {
       existingCommentId = foundComment.id;
@@ -279,7 +278,9 @@ export async function postPullRequestReview(
       summaryPublished = true;
       core.info(`Successfully updated PR review #${existingReviewId}.`);
     } catch (updateErr) {
-      core.warning(`Failed to update review #${existingReviewId}: ${updateErr}`);
+      core.warning(
+        `Failed to update review #${existingReviewId}: ${updateErr}`,
+      );
     }
   } else if (existingCommentId) {
     core.info(`Updating existing review comment #${existingCommentId}...`);
@@ -293,7 +294,9 @@ export async function postPullRequestReview(
       summaryPublished = true;
       core.info(`Successfully updated review comment on PR #${prNumber}.`);
     } catch (updateErr) {
-      core.warning(`Failed to update comment #${existingCommentId}: ${updateErr}`);
+      core.warning(
+        `Failed to update comment #${existingCommentId}: ${updateErr}`,
+      );
     }
   }
 

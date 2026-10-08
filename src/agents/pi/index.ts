@@ -77,7 +77,9 @@ export class PiReviewAgent implements ReviewAgent {
         if (event.type === "tool_execution_start") {
           core.info(`[Pi] Executing: ${event.toolName || "tool"}`);
         } else if (event.type === "tool_execution_end" && event.isError) {
-          core.warning(`[Pi] Tool ${event.toolName || "tool"} execution failed.`);
+          core.warning(
+            `[Pi] Tool ${event.toolName || "tool"} execution failed.`,
+          );
         } else if (event.type === "auto_retry_start") {
           core.warning(
             `[Pi] Retrying request (attempt ${event.attempt}/${event.maxAttempts}): ${event.errorMessage}`,
