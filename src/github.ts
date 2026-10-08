@@ -150,7 +150,6 @@ export async function resolveGitHubReviewThread(
   reason?: string,
   agentName?: string,
 ): Promise<boolean> {
-  const agentTitle = formatAgentTitle(agentName);
   try {
     if (reason) {
       try {
@@ -162,7 +161,7 @@ export async function resolveGitHubReviewThread(
                         }
                     }
                 `,
-          { threadId, body: `🤖 **${agentTitle} Resolution**: ${reason}` },
+          { threadId, body: `🤖 **Resolution**: ${reason}` },
         );
       } catch (replyErr) {
         core.warning(`Could not add reply to thread ${threadId}: ${replyErr}`);
@@ -201,52 +200,49 @@ export async function postPullRequestReview(
   const shortSha = commitSha.slice(0, 7);
   const agentTitle = formatAgentTitle(agentName);
 
-  // 1. If inline comments were recorded, attempt submitting them through GitHub's Review API
-  let inlinePosted = false;
-  if (inlineComments.length > 0) {
-    try {
-      core.info(
-        `Posting formal review with ${inlineComments.length} inline comment(s)...`,
-      );
-      await octokit.rest.pulls.createReview({
-        owner,
-        repo,
-        pull_number: prNumber,
-        commit_id: commitSha,
-        body: `## 🤖 ${agentTitle} Automated Review\n\n${reviewContent}\n\n---\n*Reviewed commit \`${shortSha}\` with ${agentTitle}*`,
-        event: "COMMENT",
-        comments: inlineComments.map((c) => ({
-          path: c.path,
-          line: c.line,
-          side: c.side || "RIGHT",
-          body: c.body,
-        })),
-      });
-      inlinePosted = true;
-      core.info(
-        `Successfully posted review with inline comments on PR #${prNumber}.`,
-      );
-    } catch (reviewErr) {
-      core.warning(
-        `Failed to create formal review with inline comments (${reviewErr}). Falling back to embedding inline comments in summary...`,
-      );
-    }
-  }
-
-  // 2. Prepare the summary comment (embed inline comments if they couldn't be attached to the diff)
+  // 1. Prepare the review body
   let formattedBody = reviewContent;
-  if (!inlinePosted && inlineComments.length > 0) {
-    const inlineList = inlineComments
-      .map((c) => `- **\`${c.path}:${c.line}\`**: ${c.body}`)
-      .join("\n\n");
-    formattedBody = `${reviewContent}\n\n### 📝 Line-Specific Feedback\n\n${inlineList}`;
+  const reviewBody = `${COMMENT_TAG}\n## 🤖 Automated Review\n\n${formattedBody}\n\n---\n*Last updated for commit \`${shortSha}\` with ${agentTitle}*`;
+
+  // 2. Determine bot identity to strictly scope review/comment ownership
+  let botLogin: string | undefined;
+  try {
+    const { data: user } = await octokit.rest.users.getAuthenticated();
+    botLogin = user.login;
+    core.debug(`Authenticated identity: ${botLogin}`);
+  } catch {
+    // GITHUB_TOKEN installation token does not support GET /user; default to standard workflow identity
+    botLogin = "github-actions[bot]";
+    core.debug(`Defaulting to workflow bot identity: ${botLogin}`);
   }
 
-  const reviewBody = `${COMMENT_TAG}\n## 🤖 ${agentTitle} Automated Review\n\n${formattedBody}\n\n---\n*Last updated for commit \`${shortSha}\` with ${agentTitle}*`;
+  const isOwnerMatch = (userLogin?: string) => {
+    if (!userLogin || !botLogin) return false;
+    return userLogin.toLowerCase() === botLogin.toLowerCase();
+  };
 
-  // 3. Update or create the main conversation thread comment
+  // 3. Check for existing review or issue comment created by this bot
   core.info(`Checking for existing review comment on PR #${prNumber}...`);
+  let existingReviewId: number | undefined;
   let existingCommentId: number | undefined;
+
+  try {
+    const { data: reviews } = await octokit.rest.pulls.listReviews({
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 100,
+    });
+    const foundReview = reviews.find(
+      (r) =>
+        isOwnerMatch(r.user?.login) && r.body && r.body.includes(COMMENT_TAG),
+    );
+    if (foundReview) {
+      existingReviewId = foundReview.id;
+    }
+  } catch (listReviewsErr) {
+    core.warning(`Failed to list existing reviews: ${listReviewsErr}`);
+  }
 
   try {
     const { data: comments } = await octokit.rest.issues.listComments({
@@ -255,34 +251,171 @@ export async function postPullRequestReview(
       issue_number: prNumber,
       per_page: 100,
     });
-
-    const found = comments.find((c) => c.body && c.body.includes(COMMENT_TAG));
-    if (found) {
-      existingCommentId = found.id;
+    const foundComment = comments.find(
+      (c) =>
+        isOwnerMatch(c.user?.login) && c.body && c.body.includes(COMMENT_TAG),
+    );
+    if (foundComment) {
+      existingCommentId = foundComment.id;
     }
-  } catch (listErr) {
-    core.warning(`Failed to list existing comments: ${listErr}`);
+  } catch (listCommentsErr) {
+    core.warning(`Failed to list existing comments: ${listCommentsErr}`);
   }
 
-  if (existingCommentId) {
+  // 4. Update existing review or issue comment if found
+  let summaryPublished = false;
+
+  if (existingReviewId) {
+    core.info(`Updating existing PR review #${existingReviewId}...`);
+    try {
+      await octokit.rest.pulls.updateReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        review_id: existingReviewId,
+        body: reviewBody,
+      });
+      summaryPublished = true;
+      core.info(`Successfully updated PR review #${existingReviewId}.`);
+    } catch (updateErr) {
+      core.warning(
+        `Failed to update review #${existingReviewId}: ${updateErr}`,
+      );
+    }
+  } else if (existingCommentId) {
     core.info(`Updating existing review comment #${existingCommentId}...`);
-    await octokit.rest.issues.updateComment({
-      owner,
-      repo,
-      comment_id: existingCommentId,
-      body: reviewBody,
-    });
-    core.info(`Successfully updated review comment on PR #${prNumber}.`);
-  } else if (!inlinePosted) {
-    core.info(
-      `No prior bot review comment found. Creating new conversation comment...`,
-    );
-    await octokit.rest.issues.createComment({
-      owner,
-      repo,
-      issue_number: prNumber,
-      body: reviewBody,
-    });
-    core.info(`Successfully posted review comment on PR #${prNumber}.`);
+    try {
+      await octokit.rest.issues.updateComment({
+        owner,
+        repo,
+        comment_id: existingCommentId,
+        body: reviewBody,
+      });
+      summaryPublished = true;
+      core.info(`Successfully updated review comment on PR #${prNumber}.`);
+    } catch (updateErr) {
+      core.warning(
+        `Failed to update comment #${existingCommentId}: ${updateErr}`,
+      );
+    }
+  }
+
+  // 5. Post inline comments via Review API
+  let inlinePosted = false;
+  if (inlineComments.length > 0) {
+    try {
+      core.info(
+        `Posting formal review with ${inlineComments.length} inline comment(s)...`,
+      );
+      const bodyToAttach = !summaryPublished ? reviewBody : undefined;
+
+      await octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        commit_id: commitSha,
+        event: "COMMENT",
+        ...(bodyToAttach ? { body: bodyToAttach } : {}),
+        comments: inlineComments.map((c) => ({
+          path: c.path,
+          line: c.line,
+          side: c.side || "RIGHT",
+          body: c.body,
+        })),
+      });
+      inlinePosted = true;
+      if (bodyToAttach) {
+        summaryPublished = true;
+      }
+      core.info(
+        `Successfully posted review with inline comments on PR #${prNumber}.`,
+      );
+    } catch (reviewErr) {
+      core.warning(
+        `Failed to create review with inline comments (${reviewErr}). Falling back to embedding feedback in summary...`,
+      );
+    }
+  }
+
+  // 6. Ensure summary is published and handle fallback if inline review failed
+  const inlineFallbackList =
+    !inlinePosted && inlineComments.length > 0
+      ? inlineComments
+          .map((c) => `- **\`${c.path}:${c.line}\`**: ${c.body}`)
+          .join("\n\n")
+      : undefined;
+
+  const finalBody = inlineFallbackList
+    ? `${reviewBody}\n\n### 📝 Line-Specific Feedback\n\n${inlineFallbackList}`
+    : reviewBody;
+
+  if (!summaryPublished) {
+    core.info(`Publishing review summary comment on PR #${prNumber}...`);
+    if (existingCommentId) {
+      try {
+        await octokit.rest.issues.updateComment({
+          owner,
+          repo,
+          comment_id: existingCommentId,
+          body: finalBody,
+        });
+        summaryPublished = true;
+      } catch (err) {
+        core.warning(`Failed to update issue comment: ${err}`);
+      }
+    }
+    if (!summaryPublished) {
+      await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: prNumber,
+        body: finalBody,
+      });
+      summaryPublished = true;
+      core.info(`Successfully posted review comment on PR #${prNumber}.`);
+    }
+  } else if (inlineFallbackList) {
+    let fallbackPublished = false;
+    if (existingReviewId) {
+      try {
+        await octokit.rest.pulls.updateReview({
+          owner,
+          repo,
+          pull_number: prNumber,
+          review_id: existingReviewId,
+          body: finalBody,
+        });
+        fallbackPublished = true;
+      } catch (err) {
+        core.warning(`Failed to update review with fallback feedback: ${err}`);
+      }
+    } else if (existingCommentId) {
+      try {
+        await octokit.rest.issues.updateComment({
+          owner,
+          repo,
+          comment_id: existingCommentId,
+          body: finalBody,
+        });
+        fallbackPublished = true;
+      } catch (err) {
+        core.warning(`Failed to update comment with fallback feedback: ${err}`);
+      }
+    }
+
+    if (!fallbackPublished) {
+      core.info(
+        `Fallback update failed or target missing. Creating separate comment with line-specific feedback...`,
+      );
+      await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: prNumber,
+        body: finalBody,
+      });
+      core.info(
+        `Successfully posted fallback comment with line-specific feedback on PR #${prNumber}.`,
+      );
+    }
   }
 }
