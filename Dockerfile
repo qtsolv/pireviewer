@@ -10,7 +10,7 @@ COPY src/ ./src/
 
 RUN bun run build
 
-FROM node:20-alpine
+FROM node:lts-alpine
 
 WORKDIR /app
 
