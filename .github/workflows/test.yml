@@ -57,7 +57,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_API_KEY }}
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          model: google/gemini-2.5-flash
+          model: google/gemini-3.8-flash
 
       - name: Verify Review Output
         if: always() && steps.previewer.outputs.review != ''
