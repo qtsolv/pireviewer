@@ -372,6 +372,7 @@ export async function postPullRequestReview(
       core.info(`Successfully posted review comment on PR #${prNumber}.`);
     }
   } else if (inlineFallbackList) {
+    let fallbackPublished = false;
     if (existingReviewId) {
       try {
         await octokit.rest.pulls.updateReview({
@@ -381,6 +382,7 @@ export async function postPullRequestReview(
           review_id: existingReviewId,
           body: finalBody,
         });
+        fallbackPublished = true;
       } catch (err) {
         core.warning(`Failed to update review with fallback feedback: ${err}`);
       }
@@ -392,9 +394,25 @@ export async function postPullRequestReview(
           comment_id: existingCommentId,
           body: finalBody,
         });
+        fallbackPublished = true;
       } catch (err) {
         core.warning(`Failed to update comment with fallback feedback: ${err}`);
       }
+    }
+
+    if (!fallbackPublished) {
+      core.info(
+        `Fallback update failed or target missing. Creating separate comment with line-specific feedback...`,
+      );
+      await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: prNumber,
+        body: finalBody,
+      });
+      core.info(
+        `Successfully posted fallback comment with line-specific feedback on PR #${prNumber}.`,
+      );
     }
   }
 }
