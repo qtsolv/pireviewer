@@ -150,7 +150,6 @@ export async function resolveGitHubReviewThread(
   reason?: string,
   agentName?: string,
 ): Promise<boolean> {
-  const agentTitle = formatAgentTitle(agentName);
   try {
     if (reason) {
       try {
@@ -162,7 +161,7 @@ export async function resolveGitHubReviewThread(
                         }
                     }
                 `,
-          { threadId, body: `🤖 **${agentTitle} Resolution**: ${reason}` },
+          { threadId, body: `🤖 **Resolution**: ${reason}` },
         );
       } catch (replyErr) {
         core.warning(`Could not add reply to thread ${threadId}: ${replyErr}`);
@@ -201,52 +200,34 @@ export async function postPullRequestReview(
   const shortSha = commitSha.slice(0, 7);
   const agentTitle = formatAgentTitle(agentName);
 
-  // 1. If inline comments were recorded, attempt submitting them through GitHub's Review API
-  let inlinePosted = false;
-  if (inlineComments.length > 0) {
-    try {
-      core.info(
-        `Posting formal review with ${inlineComments.length} inline comment(s)...`,
-      );
-      await octokit.rest.pulls.createReview({
-        owner,
-        repo,
-        pull_number: prNumber,
-        commit_id: commitSha,
-        body: `## 🤖 Automated Review\n\n${reviewContent}\n\n---\n*Reviewed commit \`${shortSha}\` with ${agentTitle}*`,
-        event: "COMMENT",
-        comments: inlineComments.map((c) => ({
-          path: c.path,
-          line: c.line,
-          side: c.side || "RIGHT",
-          body: c.body,
-        })),
-      });
-      inlinePosted = true;
-      core.info(
-        `Successfully posted review with inline comments on PR #${prNumber}.`,
-      );
-    } catch (reviewErr) {
-      core.warning(
-        `Failed to create formal review with inline comments (${reviewErr}). Falling back to embedding inline comments in summary...`,
-      );
-    }
-  }
-
-  // 2. Prepare the summary comment (embed inline comments if they couldn't be attached to the diff)
+  // 1. Prepare the review body
   let formattedBody = reviewContent;
-  if (!inlinePosted && inlineComments.length > 0) {
-    const inlineList = inlineComments
-      .map((c) => `- **\`${c.path}:${c.line}\`**: ${c.body}`)
-      .join("\n\n");
-    formattedBody = `${reviewContent}\n\n### 📝 Line-Specific Feedback\n\n${inlineList}`;
-  }
-
   const reviewBody = `${COMMENT_TAG}\n## 🤖 Automated Review\n\n${formattedBody}\n\n---\n*Last updated for commit \`${shortSha}\` with ${agentTitle}*`;
 
-  // 3. Update or create the main conversation thread comment
+  // 2. Check for existing review or issue comment created previously
   core.info(`Checking for existing review comment on PR #${prNumber}...`);
+  let existingReviewId: number | undefined;
   let existingCommentId: number | undefined;
+
+  try {
+    const { data: reviews } = await octokit.rest.pulls.listReviews({
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 100,
+    });
+    const foundReview = reviews.find(
+      (r) =>
+        r.body &&
+        (r.body.includes(COMMENT_TAG) ||
+          r.body.includes("Automated Review")),
+    );
+    if (foundReview) {
+      existingReviewId = foundReview.id;
+    }
+  } catch (listReviewsErr) {
+    core.warning(`Failed to list existing reviews: ${listReviewsErr}`);
+  }
 
   try {
     const { data: comments } = await octokit.rest.issues.listComments({
@@ -255,27 +236,80 @@ export async function postPullRequestReview(
       issue_number: prNumber,
       per_page: 100,
     });
-
-    const found = comments.find((c) => c.body && c.body.includes(COMMENT_TAG));
-    if (found) {
-      existingCommentId = found.id;
+    const foundComment = comments.find(
+      (c) => c.body && c.body.includes(COMMENT_TAG),
+    );
+    if (foundComment) {
+      existingCommentId = foundComment.id;
     }
-  } catch (listErr) {
-    core.warning(`Failed to list existing comments: ${listErr}`);
+  } catch (listCommentsErr) {
+    core.warning(`Failed to list existing comments: ${listCommentsErr}`);
   }
 
-  if (existingCommentId) {
+  // 3. Update existing review or issue comment if found
+  if (existingReviewId) {
+    core.info(`Updating existing PR review #${existingReviewId}...`);
+    try {
+      await octokit.rest.pulls.updateReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        review_id: existingReviewId,
+        body: reviewBody,
+      });
+      core.info(`Successfully updated PR review #${existingReviewId}.`);
+    } catch (updateErr) {
+      core.warning(`Failed to update review #${existingReviewId}: ${updateErr}`);
+    }
+  } else if (existingCommentId) {
     core.info(`Updating existing review comment #${existingCommentId}...`);
-    await octokit.rest.issues.updateComment({
-      owner,
-      repo,
-      comment_id: existingCommentId,
-      body: reviewBody,
-    });
-    core.info(`Successfully updated review comment on PR #${prNumber}.`);
-  } else if (!inlinePosted) {
+    try {
+      await octokit.rest.issues.updateComment({
+        owner,
+        repo,
+        comment_id: existingCommentId,
+        body: reviewBody,
+      });
+      core.info(`Successfully updated review comment on PR #${prNumber}.`);
+    } catch (updateErr) {
+      core.warning(`Failed to update comment #${existingCommentId}: ${updateErr}`);
+    }
+  }
+
+  // 4. Post inline comments or create initial review/comment if none existed
+  if (inlineComments.length > 0) {
+    try {
+      core.info(
+        `Posting formal review with ${inlineComments.length} inline comment(s)...`,
+      );
+      const bodyToAttach =
+        !existingReviewId && !existingCommentId ? reviewBody : undefined;
+
+      await octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        commit_id: commitSha,
+        event: "COMMENT",
+        ...(bodyToAttach ? { body: bodyToAttach } : {}),
+        comments: inlineComments.map((c) => ({
+          path: c.path,
+          line: c.line,
+          side: c.side || "RIGHT",
+          body: c.body,
+        })),
+      });
+      core.info(
+        `Successfully posted review with inline comments on PR #${prNumber}.`,
+      );
+    } catch (reviewErr) {
+      core.warning(
+        `Failed to create review with inline comments (${reviewErr}).`,
+      );
+    }
+  } else if (!existingReviewId && !existingCommentId) {
     core.info(
-      `No prior bot review comment found. Creating new conversation comment...`,
+      `No prior bot review found. Creating new conversation comment...`,
     );
     await octokit.rest.issues.createComment({
       owner,
