@@ -204,20 +204,33 @@ export async function postPullRequestReview(
   let formattedBody = reviewContent;
   const reviewBody = `${COMMENT_TAG}\n## 🤖 Automated Review\n\n${formattedBody}\n\n---\n*Last updated for commit \`${shortSha}\` with ${agentTitle}*`;
 
-  // 2. Fetch authenticated bot identity to avoid matching third-party reviews
+  // 2. Determine bot identity to strictly scope review/comment ownership
   let botLogin: string | undefined;
   try {
     const { data: user } = await octokit.rest.users.getAuthenticated();
     botLogin = user.login;
-    core.debug(`Authenticated bot identity: ${botLogin}`);
-  } catch (userErr) {
-    core.debug(`Could not determine authenticated identity: ${userErr}`);
+    core.debug(`Authenticated identity: ${botLogin}`);
+  } catch {
+    // GITHUB_TOKEN installation token does not support GET /user; default to standard workflow identity
+    botLogin = "github-actions[bot]";
+    core.debug(`Defaulting to workflow bot identity: ${botLogin}`);
   }
 
   const isOwnerMatch = (userLogin?: string) => {
-    if (!userLogin) return false;
-    if (botLogin) return userLogin.toLowerCase() === botLogin.toLowerCase();
-    return userLogin.endsWith("[bot]");
+    if (!userLogin || !botLogin) return false;
+    return userLogin.toLowerCase() === botLogin.toLowerCase();
+  };
+
+  const isPreviewerReview = (body?: string | null) => {
+    if (!body) return false;
+    if (body.includes(COMMENT_TAG)) return true;
+    const hasLegacyHeader =
+      body.includes("## 🤖 Automated Review") ||
+      body.includes("## 🤖 Pi Agent Automated Review");
+    const hasLegacyFooter =
+      body.includes("Reviewed commit `") ||
+      body.includes("Last updated for commit `");
+    return hasLegacyHeader && hasLegacyFooter;
   };
 
   // 3. Check for existing review or issue comment created by this bot
@@ -233,11 +246,7 @@ export async function postPullRequestReview(
       per_page: 100,
     });
     const foundReview = reviews.find(
-      (r) =>
-        isOwnerMatch(r.user?.login) &&
-        r.body &&
-        (r.body.includes(COMMENT_TAG) ||
-          r.body.includes("Automated Review")),
+      (r) => isOwnerMatch(r.user?.login) && isPreviewerReview(r.body),
     );
     if (foundReview) {
       existingReviewId = foundReview.id;
