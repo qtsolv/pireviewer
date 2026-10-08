@@ -1,4 +1,4 @@
-# PReviewer
+# PiReviewer
 
 A custom GitHub Action to automate Pull Request reviews using the programmatic [Pi Coding Agent SDK](https://pi.dev) (`@earendil-works/pi-coding-agent`).
 
@@ -23,7 +23,7 @@ on:
     types: [opened, synchronize, reopened]
 
 concurrency:
-  group: previewer-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: pireviewer-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,8 +37,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run PReviewer Action
-        uses: qtsolv/previewer@v1
+      - name: Run PiReviewer Action
+        uses: qtsolv/pireviewer@v1
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         with:

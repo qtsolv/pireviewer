@@ -33,7 +33,7 @@ import type { InlineComment } from "./agents";
 
 export type { InlineComment };
 
-const COMMENT_TAG = "<!-- previewer-bot-review -->";
+const COMMENT_TAG = "<!-- pireviewer-bot-review -->";
 
 export function createGitHubClient(token: string): OctokitClient {
   return github.getOctokit(token);

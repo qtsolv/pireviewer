@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize, reopened]
 
 concurrency:
-  group: previewer-test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: pireviewer-test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -53,8 +53,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run PReviewer Action
-        id: previewer
+      - name: Run PiReviewer Action
+        id: pireviewer
         uses: ./
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -64,7 +64,7 @@ jobs:
 
       - name: Verify Review Output
         env:
-          REVIEW: ${{ steps.previewer.outputs.review }}
+          REVIEW: ${{ steps.pireviewer.outputs.review }}
         run: |
           if [ -z "$REVIEW" ]; then
             echo "::error::Action finished but review output was empty"

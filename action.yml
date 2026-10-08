@@ -1,4 +1,4 @@
-name: PReviewer
+name: PiReviewer
 description: Review PRs with pluggable AI coding agents
 author: Vaibhav Pandey
 branding:
@@ -26,4 +26,4 @@ outputs:
 
 runs:
   using: docker
-  image: docker://ghcr.io/qtsolv/previewer:v1
+  image: docker://ghcr.io/qtsolv/pireviewer:v1

@@ -1,5 +1,5 @@
 {
-  "name": "previewer",
+  "name": "pireviewer",
   "module": "dist/gha.js",
   "type": "module",
   "scripts": {
