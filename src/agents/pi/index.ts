@@ -67,9 +67,31 @@ export class PiReviewAgent implements ReviewAgent {
     });
 
     try {
-      session.subscribe((event) => {
+      let lastErrorMessage: string | undefined;
+
+      session.subscribe((event: any) => {
         if (event.type === "tool_execution_start") {
-          core.info(`[Pi] Executing: ${(event as any).toolName || "tool"}`);
+          core.info(`[Pi] Executing: ${event.toolName || "tool"}`);
+        } else if (event.type === "tool_execution_end" && event.isError) {
+          core.warning(`[Pi] Tool ${event.toolName || "tool"} execution failed.`);
+        } else if (event.type === "auto_retry_start") {
+          core.warning(
+            `[Pi] Retrying request (attempt ${event.attempt}/${event.maxAttempts}): ${event.errorMessage}`,
+          );
+        } else if (event.type === "auto_retry_end" && !event.success) {
+          lastErrorMessage = event.finalError || lastErrorMessage;
+          core.error(`[Pi] Retry failed: ${event.finalError}`);
+        } else if (
+          event.type === "message_end" &&
+          event.message?.role === "assistant"
+        ) {
+          if (
+            event.message.errorMessage ||
+            event.message.stopReason === "error"
+          ) {
+            lastErrorMessage = event.message.errorMessage || lastErrorMessage;
+            core.error(`[Pi] Assistant error: ${lastErrorMessage}`);
+          }
         }
       });
 
@@ -79,6 +101,18 @@ export class PiReviewAgent implements ReviewAgent {
 
       const summary = session.getLastAssistantText()?.trim();
       if (!summary) {
+        const failedAssistant = session.messages
+          .slice()
+          .reverse()
+          .find(
+            (m: any) =>
+              m.role === "assistant" &&
+              (m.errorMessage || m.stopReason === "error"),
+          ) as any;
+        const err = lastErrorMessage || failedAssistant?.errorMessage;
+        if (err) {
+          throw new Error(`Coding agent failed: ${err}`);
+        }
         throw new Error(
           "Coding agent completed without generating review feedback.",
         );
