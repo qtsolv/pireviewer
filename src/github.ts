@@ -213,7 +213,7 @@ export async function postPullRequestReview(
         repo,
         pull_number: prNumber,
         commit_id: commitSha,
-        body: `## 🤖 ${agentTitle} Automated Review\n\n${reviewContent}\n\n---\n*Reviewed commit \`${shortSha}\` with ${agentTitle}*`,
+        body: `## 🤖 Automated Review\n\n${reviewContent}\n\n---\n*Reviewed commit \`${shortSha}\` with ${agentTitle}*`,
         event: "COMMENT",
         comments: inlineComments.map((c) => ({
           path: c.path,
@@ -242,7 +242,7 @@ export async function postPullRequestReview(
     formattedBody = `${reviewContent}\n\n### 📝 Line-Specific Feedback\n\n${inlineList}`;
   }
 
-  const reviewBody = `${COMMENT_TAG}\n## 🤖 ${agentTitle} Automated Review\n\n${formattedBody}\n\n---\n*Last updated for commit \`${shortSha}\` with ${agentTitle}*`;
+  const reviewBody = `${COMMENT_TAG}\n## 🤖 Automated Review\n\n${formattedBody}\n\n---\n*Last updated for commit \`${shortSha}\` with ${agentTitle}*`;
 
   // 3. Update or create the main conversation thread comment
   core.info(`Checking for existing review comment on PR #${prNumber}...`);
