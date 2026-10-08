@@ -221,18 +221,6 @@ export async function postPullRequestReview(
     return userLogin.toLowerCase() === botLogin.toLowerCase();
   };
 
-  const isPreviewerReview = (body?: string | null) => {
-    if (!body) return false;
-    if (body.includes(COMMENT_TAG)) return true;
-    const hasLegacyHeader =
-      body.includes("## 🤖 Automated Review") ||
-      body.includes("## 🤖 Pi Agent Automated Review");
-    const hasLegacyFooter =
-      body.includes("Reviewed commit `") ||
-      body.includes("Last updated for commit `");
-    return hasLegacyHeader && hasLegacyFooter;
-  };
-
   // 3. Check for existing review or issue comment created by this bot
   core.info(`Checking for existing review comment on PR #${prNumber}...`);
   let existingReviewId: number | undefined;
@@ -246,7 +234,7 @@ export async function postPullRequestReview(
       per_page: 100,
     });
     const foundReview = reviews.find(
-      (r) => isOwnerMatch(r.user?.login) && isPreviewerReview(r.body),
+      (r) => isOwnerMatch(r.user?.login) && r.body && r.body.includes(COMMENT_TAG),
     );
     if (foundReview) {
       existingReviewId = foundReview.id;
