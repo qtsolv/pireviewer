@@ -1,0 +1,23 @@
+{
+  "name": "previewer",
+  "module": "dist/gha.js",
+  "type": "module",
+  "scripts": {
+    "build": "bun build --target node ./src/gha.ts --outfile ./dist/gha.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/handlebars": "^4.1.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@actions/core": "^3.0.1",
+    "@actions/exec": "^3.0.0",
+    "@actions/github": "^9.1.1",
+    "@actions/io": "^3.0.2",
+    "@earendil-works/pi-coding-agent": "^1.0.4",
+    "handlebars": "^4.7.10"
+  }
+}
